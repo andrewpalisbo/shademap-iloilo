@@ -1,0 +1,203 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <link
+    href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
+    rel="stylesheet"
+  >
+
+  <style>
+    html, body, #map {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+    }
+
+    .map-popup {
+      font-family: Arial, sans-serif;
+      min-width: 150px;
+    }
+
+    .map-popup button {
+      background: #28734d;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 5px;
+      margin-top: 8px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+
+<script>
+
+// CREATE MAP
+const map = new maplibregl.Map({
+  container: 'map',
+
+  style: 'https://tiles.openfreemap.org/styles/bright',
+
+  // Center of Westwoods Subdivision
+  center: [122.53665, 10.73050],
+
+  zoom: 16,
+  pitch: 55,
+  bearing: -15
+});
+
+// MAP CONTROLS
+map.addControl(
+  new maplibregl.NavigationControl(),
+  'top-right'
+);
+
+// VERIFIED LOCATION RECORDS
+// Coordinates use [longitude, latitude].
+
+const places = [
+  {
+    id: 'loc01',
+    name: 'Westwoods Subdivision Clubhouse',
+    lng: 122.5366716,
+    lat: 10.7307004,
+    score: 80
+  },
+
+  {
+    id: 'loc02',
+    name: 'Westwoods Subdivision Park / Playground',
+    lng: 122.5368513,
+    lat: 10.7303288,
+    score: 55
+  },
+
+  {
+    id: 'loc03',
+    name: 'Westwoods Subdivision Tennis Court',
+    lng: 122.5364520,
+    lat: 10.7303917,
+    score: 10
+  }
+];
+
+// ADD 3D BUILDINGS AND LOCATION MARKERS
+map.on('load', function () {
+
+  // 3D BUILDING DATA
+  map.addSource('openfreemap', {
+    type: 'vector',
+    url: 'https://tiles.openfreemap.org/planet'
+  });
+
+  // Place buildings below map labels when possible
+  const layers = map.getStyle().layers;
+
+  const firstLabelLayer = layers.find(function(layer) {
+    return layer.type === 'symbol';
+  });
+
+  map.addLayer({
+    id: '3d-buildings',
+    source: 'openfreemap',
+    'source-layer': 'building',
+    type: 'fill-extrusion',
+    minzoom: 14,
+
+    paint: {
+      'fill-extrusion-color': '#aab5aa',
+
+      'fill-extrusion-height': [
+        'coalesce',
+        ['get', 'render_height'],
+        0
+      ],
+
+      'fill-extrusion-base': [
+        'coalesce',
+        ['get', 'render_min_height'],
+        0
+      ],
+
+      'fill-extrusion-opacity': 0.75
+    }
+
+  }, firstLabelLayer ? firstLabelLayer.id : undefined);
+
+
+  // CREATE MARKERS
+  places.forEach(function(place) {
+
+    const popup = new maplibregl.Popup({
+      offset: 25
+    }).setHTML(
+      '<div class="map-popup">' +
+        '<b>' + place.name + '</b>' +
+        '<br><br>' +
+        'Amenity Score: ' + place.score + '/100' +
+        '<br>' +
+        '<button id="open-' + place.id + '">' +
+          'View Details' +
+        '</button>' +
+      '</div>'
+    );
+
+    // Send selected location to MIT App Inventor
+    popup.on('open', function() {
+
+      const button = popup.getElement().querySelector(
+        '#open-' + place.id
+      );
+
+      if (button) {
+        button.addEventListener('click', function() {
+
+          if (window.AppInventor) {
+
+            window.AppInventor.setWebViewString(
+              'LOC|' + place.id
+            );
+
+          } else {
+            alert('MIT App Inventor connection is not available.');
+          }
+
+        });
+      }
+
+    });
+
+    // ADD MARKER
+    new maplibregl.Marker({
+      color: '#28734d'
+    })
+
+    .setLngLat([place.lng, place.lat])
+
+    .setPopup(popup)
+
+    .addTo(map);
+
+  });
+
+});
+
+</script>
+
+</body>
+</html>
