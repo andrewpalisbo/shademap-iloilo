@@ -1,0 +1,300 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShadeMap Iloilo - Shadow Estimate</title>
+
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #eef3f0;
+      color: #17352c;
+    }
+
+    header {
+      padding: 14px;
+      background: #174b3b;
+      color: white;
+    }
+
+    h2 { margin: 0 0 5px; }
+    #status { font-size: 13px; }
+
+    #map {
+      width: 100%;
+      height: 65vh;
+      min-height: 350px;
+    }
+
+    #info {
+      padding: 14px;
+      line-height: 1.5;
+      background: white;
+    }
+
+    .notice {
+      font-size: 12px;
+      color: #52645c;
+    }
+
+    .sun {
+      font-size: 18px;
+      font-weight: bold;
+      color: #b56a00;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h2>ShadeMap Iloilo</h2>
+    <div>Estimate / Predict Mode</div>
+    <div id="status">Waiting for date and time...</div>
+  </header>
+
+  <div id="map"></div>
+
+  <section id="info">
+    <div class="sun" id="sunDirection">Sun position: Not calculated</div>
+    <div id="shadowDirection">Expected shadow direction: Not calculated</div>
+    <p class="notice">
+      This is an approximate solar-position demonstration.
+      It does not measure actual ground temperature or verify
+      building heights, tree canopies, or exact shadow boundaries.
+    </p>
+  </section>
+
+  <script>
+    const latitude = 10.73050;
+    const longitude = 122.53665;
+
+    const map = new maplibregl.Map({
+      container: "map",
+      style: "https://tiles.openfreemap.org/styles/bright",
+      center: [longitude, latitude],
+      zoom: 16,
+      pitch: 55,
+      bearing: -15
+    });
+
+    map.addControl(new maplibregl.NavigationControl());
+
+    map.on("load", function () {
+      const layers = map.getStyle().layers;
+      const labelLayer = layers.find(
+        layer => layer.type === "symbol"
+      );
+
+      map.addLayer({
+        id: "3d-buildings",
+        source: "openmaptiles",
+        "source-layer": "building",
+        type: "fill-extrusion",
+        minzoom: 14,
+        paint: {
+          "fill-extrusion-color": "#9aa9a0",
+          "fill-extrusion-height": [
+            "coalesce",
+            ["get", "render_height"],
+            8
+          ],
+          "fill-extrusion-base": [
+            "coalesce",
+            ["get", "render_min_height"],
+            0
+          ],
+          "fill-extrusion-opacity": 0.75
+        }
+      }, labelLayer ? labelLayer.id : undefined);
+
+      new maplibregl.Marker({ color: "#16834a" })
+        .setLngLat([122.5366716, 10.7307004])
+        .setPopup(new maplibregl.Popup().setText("Westwoods Clubhouse"))
+        .addTo(map);
+
+      new maplibregl.Marker({ color: "#e0a52d" })
+        .setLngLat([122.5368513, 10.7303288])
+        .setPopup(new maplibregl.Popup().setText("Westwoods Park / Playground"))
+        .addTo(map);
+
+      new maplibregl.Marker({ color: "#3976bd" })
+        .setLngLat([122.5364520, 10.7303917])
+        .setPopup(new maplibregl.Popup().setText("Westwoods Tennis Court"))
+        .addTo(map);
+
+      readAppInventorMessage();
+    });
+
+    function directionName(degrees) {
+      const names = [
+        "North", "Northeast", "East", "Southeast",
+        "South", "Southwest", "West", "Northwest"
+      ];
+
+      return names[Math.round(degrees / 45) % 8];
+    }
+
+    function calculateSun(date, time) {
+      const parts = date.split("/");
+      const timeParts = time.split(":");
+
+      if (parts.length !== 3 || timeParts.length !== 2) {
+        throw new Error("Invalid date or time format.");
+      }
+
+      const month = Number(parts[0]);
+      const day = Number(parts[1]);
+      const year = Number(parts[2]);
+      const hour = Number(timeParts[0]);
+      const minute = Number(timeParts[1]);
+
+      if (
+        !month || !day || !year ||
+        hour < 0 || hour > 23 ||
+        minute < 0 || minute > 59
+      ) {
+        throw new Error("Invalid date or time.");
+      }
+
+      // Philippines local time is UTC+8.
+      const localDate = new Date(
+        year, month - 1, day, hour, minute
+      );
+
+      if (
+        localDate.getFullYear() !== year ||
+        localDate.getMonth() !== month - 1 ||
+        localDate.getDate() !== day
+      ) {
+        throw new Error("Please select a valid date.");
+      }
+
+      const utc = new Date(localDate.getTime() - 8 * 60 * 60 * 1000);
+      const dayOfYear = Math.floor(
+        (Date.UTC(year, utc.getUTCMonth(), utc.getUTCDate()) -
+         Date.UTC(year, 0, 0)) / 86400000
+      );
+
+      const decimalHour =
+        utc.getUTCHours() +
+        utc.getUTCMinutes() / 60 +
+        utc.getUTCSeconds() / 3600;
+
+      const gamma = 2 * Math.PI / 365 *
+        (dayOfYear - 1 + (decimalHour - 12) / 24);
+
+      const equationTime =
+        229.18 * (
+          0.000075 +
+          0.001868 * Math.cos(gamma) -
+          0.032077 * Math.sin(gamma) -
+          0.014615 * Math.cos(2 * gamma) -
+          0.040849 * Math.sin(2 * gamma)
+        );
+
+      const declination =
+        0.006918 -
+        0.399912 * Math.cos(gamma) +
+        0.070257 * Math.sin(gamma) -
+        0.006758 * Math.cos(2 * gamma) +
+        0.000907 * Math.sin(2 * gamma) -
+        0.002697 * Math.cos(3 * gamma) +
+        0.00148 * Math.sin(3 * gamma);
+
+      const trueSolarMinutes =
+        utc.getUTCHours() * 60 +
+        utc.getUTCMinutes() +
+        utc.getUTCSeconds() / 60 +
+        equationTime +
+        4 * longitude;
+
+      const hourAngle =
+        (trueSolarMinutes / 4 - 180) * Math.PI / 180;
+
+      const latRad = latitude * Math.PI / 180;
+
+      const sinElevation =
+        Math.sin(latRad) * Math.sin(declination) +
+        Math.cos(latRad) * Math.cos(declination) *
+        Math.cos(hourAngle);
+
+      const elevation = Math.asin(sinElevation);
+
+      const azimuth = Math.atan2(
+        Math.sin(hourAngle),
+        Math.cos(hourAngle) * Math.sin(latRad) -
+        Math.tan(declination) * Math.cos(latRad)
+      ) * 180 / Math.PI + 180;
+
+      return {
+        elevation: elevation * 180 / Math.PI,
+        azimuth: (azimuth + 360) % 360
+      };
+    }
+
+    function displayEstimate(date, time) {
+      const sun = calculateSun(date, time);
+
+      document.getElementById("status").textContent =
+        "Selected: " + date + " at " + time;
+
+      if (sun.elevation <= 0) {
+        document.getElementById("sunDirection").textContent =
+          "Sun position: Below the horizon";
+
+        document.getElementById("shadowDirection").textContent =
+          "A daylight shadow estimate is unavailable at this time.";
+
+        return;
+      }
+
+      const shadowAzimuth = (sun.azimuth + 180) % 360;
+
+      document.getElementById("sunDirection").textContent =
+        "Sun direction: " + directionName(sun.azimuth) +
+        " (" + sun.azimuth.toFixed(1) + "°)";
+
+      document.getElementById("shadowDirection").textContent =
+        "Expected shadow direction: " +
+        directionName(shadowAzimuth) +
+        " (" + shadowAzimuth.toFixed(1) + "°)";
+
+      map.setBearing(shadowAzimuth);
+    }
+
+    function readAppInventorMessage() {
+      if (
+        !window.AppInventor ||
+        typeof window.AppInventor.getWebViewString !== "function"
+      ) {
+        document.getElementById("status").textContent =
+          "Open this page through the MIT App Inventor app to receive selections.";
+        return;
+      }
+
+      const message = window.AppInventor.getWebViewString();
+
+      if (!message || !message.startsWith("SHADOW|")) {
+        document.getElementById("status").textContent =
+          "Waiting for a date and time from the app.";
+        return;
+      }
+
+      const fields = message.split("|");
+
+      try {
+        displayEstimate(fields[1], fields[2]);
+      } catch (error) {
+        document.getElementById("status").textContent =
+          "Could not read selection: " + error.message;
+      }
+    }
+  </script>
+</body>
+</html>
