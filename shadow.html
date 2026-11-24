@@ -61,8 +61,14 @@
   <div id="map"></div>
 
   <section id="info">
-    <div class="sun" id="sunDirection">Sun position: Not calculated</div>
-    <div id="shadowDirection">Expected shadow direction: Not calculated</div>
+    <div class="sun" id="sunDirection">
+      Sun position: Not calculated
+    </div>
+
+    <div id="shadowDirection">
+      Expected shadow direction: Not calculated
+    </div>
+
     <p class="notice">
       This is an approximate solar-position demonstration.
       It does not measure actual ground temperature or verify
@@ -73,6 +79,8 @@
   <script>
     const latitude = 10.73050;
     const longitude = 122.53665;
+
+    let lastMessage = "";
 
     const map = new maplibregl.Map({
       container: "map",
@@ -115,26 +123,47 @@
 
       new maplibregl.Marker({ color: "#16834a" })
         .setLngLat([122.5366716, 10.7307004])
-        .setPopup(new maplibregl.Popup().setText("Westwoods Clubhouse"))
+        .setPopup(
+          new maplibregl.Popup().setText(
+            "Westwoods Clubhouse"
+          )
+        )
         .addTo(map);
 
       new maplibregl.Marker({ color: "#e0a52d" })
         .setLngLat([122.5368513, 10.7303288])
-        .setPopup(new maplibregl.Popup().setText("Westwoods Park / Playground"))
+        .setPopup(
+          new maplibregl.Popup().setText(
+            "Westwoods Park / Playground"
+          )
+        )
         .addTo(map);
 
       new maplibregl.Marker({ color: "#3976bd" })
         .setLngLat([122.5364520, 10.7303917])
-        .setPopup(new maplibregl.Popup().setText("Westwoods Tennis Court"))
+        .setPopup(
+          new maplibregl.Popup().setText(
+            "Westwoods Tennis Court"
+          )
+        )
         .addTo(map);
 
       readAppInventorMessage();
+
+      // Check for new App Inventor messages every second.
+      setInterval(readAppInventorMessage, 1000);
     });
 
     function directionName(degrees) {
       const names = [
-        "North", "Northeast", "East", "Southeast",
-        "South", "Southwest", "West", "Northwest"
+        "North",
+        "Northeast",
+        "East",
+        "Southeast",
+        "South",
+        "Southwest",
+        "West",
+        "Northwest"
       ];
 
       return names[Math.round(degrees / 45) % 8];
@@ -151,6 +180,7 @@
       const month = Number(parts[0]);
       const day = Number(parts[1]);
       const year = Number(parts[2]);
+
       const hour = Number(timeParts[0]);
       const minute = Number(timeParts[1]);
 
@@ -162,7 +192,6 @@
         throw new Error("Invalid date or time.");
       }
 
-      // Philippines local time is UTC+8.
       const localDate = new Date(
         year, month - 1, day, hour, minute
       );
@@ -175,10 +204,17 @@
         throw new Error("Please select a valid date.");
       }
 
-      const utc = new Date(localDate.getTime() - 8 * 60 * 60 * 1000);
+      // Philippine Standard Time: UTC+8.
+      const utc = new Date(
+        localDate.getTime() - 8 * 60 * 60 * 1000
+      );
+
+      // Use the selected local calendar date for day of year.
       const dayOfYear = Math.floor(
-        (Date.UTC(year, utc.getUTCMonth(), utc.getUTCDate()) -
-         Date.UTC(year, 0, 0)) / 86400000
+        (
+          Date.UTC(year, month - 1, day) -
+          Date.UTC(year, 0, 0)
+        ) / 86400000
       );
 
       const decimalHour =
@@ -257,7 +293,8 @@
       const shadowAzimuth = (sun.azimuth + 180) % 360;
 
       document.getElementById("sunDirection").textContent =
-        "Sun direction: " + directionName(sun.azimuth) +
+        "Sun direction: " +
+        directionName(sun.azimuth) +
         " (" + sun.azimuth.toFixed(1) + "°)";
 
       document.getElementById("shadowDirection").textContent =
@@ -273,18 +310,20 @@
         !window.AppInventor ||
         typeof window.AppInventor.getWebViewString !== "function"
       ) {
-        document.getElementById("status").textContent =
-          "Open this page through the MIT App Inventor app to receive selections.";
         return;
       }
 
       const message = window.AppInventor.getWebViewString();
 
-      if (!message || !message.startsWith("SHADOW|")) {
-        document.getElementById("status").textContent =
-          "Waiting for a date and time from the app.";
+      if (
+        !message ||
+        !message.startsWith("SHADOW|") ||
+        message === lastMessage
+      ) {
         return;
       }
+
+      lastMessage = message;
 
       const fields = message.split("|");
 
