@@ -48,6 +48,16 @@
       font-weight: bold;
       color: #b56a00;
     }
+
+    #debug {
+      margin-top: 12px;
+      padding: 10px;
+      background: #e8f0ec;
+      border: 1px solid #9aafa3;
+      border-radius: 6px;
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
   </style>
 </head>
 
@@ -69,6 +79,10 @@
       Expected shadow direction: Not calculated
     </div>
 
+    <div id="debug">
+      Connection test: Starting...
+    </div>
+
     <p class="notice">
       This is an approximate solar-position demonstration.
       It does not measure actual ground temperature or verify
@@ -81,8 +95,74 @@
     const longitude = 122.53665;
 
     let lastMessage = "";
+    let map;
 
-    const map = new maplibregl.Map({
+    function debugMessage(message) {
+      document.getElementById("debug").textContent =
+        "Connection test: " + message;
+    }
+
+    // Start checking the App Inventor connection immediately.
+    function readAppInventorMessage() {
+      if (!window.AppInventor) {
+        debugMessage("window.AppInventor is not available.");
+        return;
+      }
+
+      if (
+        typeof window.AppInventor.getWebViewString !== "function"
+      ) {
+        debugMessage("getWebViewString() is not available.");
+        return;
+      }
+
+      let message;
+
+      try {
+        message = window.AppInventor.getWebViewString();
+      } catch (error) {
+        debugMessage("Reading error: " + error.message);
+        return;
+      }
+
+      debugMessage(
+        "Bridge available. Value received: " +
+        (message || "(empty)")
+      );
+
+      if (
+        !message ||
+        !message.startsWith("SHADOW|") ||
+        message === lastMessage
+      ) {
+        return;
+      }
+
+      lastMessage = message;
+
+      const fields = message.split("|");
+
+      if (fields.length < 3) {
+        document.getElementById("status").textContent =
+          "Invalid message format.";
+        return;
+      }
+
+      try {
+        displayEstimate(fields[1], fields[2]);
+      } catch (error) {
+        document.getElementById("status").textContent =
+          "Could not read selection: " + error.message;
+      }
+    }
+
+    // Check every second, independently of map loading.
+    setInterval(readAppInventorMessage, 1000);
+
+    // Also check immediately.
+    readAppInventorMessage();
+
+    map = new maplibregl.Map({
       container: "map",
       style: "https://tiles.openfreemap.org/styles/bright",
       center: [longitude, latitude],
@@ -149,9 +229,6 @@
         .addTo(map);
 
       readAppInventorMessage();
-
-      // Check for new App Inventor messages every second.
-      setInterval(readAppInventorMessage, 1000);
     });
 
     function directionName(degrees) {
@@ -209,7 +286,6 @@
         localDate.getTime() - 8 * 60 * 60 * 1000
       );
 
-      // Use the selected local calendar date for day of year.
       const dayOfYear = Math.floor(
         (
           Date.UTC(year, month - 1, day) -
@@ -219,8 +295,7 @@
 
       const decimalHour =
         utc.getUTCHours() +
-        utc.getUTCMinutes() / 60 +
-        utc.getUTCSeconds() / 3600;
+        utc.getUTCMinutes() / 60;
 
       const gamma = 2 * Math.PI / 365 *
         (dayOfYear - 1 + (decimalHour - 12) / 24);
@@ -246,7 +321,6 @@
       const trueSolarMinutes =
         utc.getUTCHours() * 60 +
         utc.getUTCMinutes() +
-        utc.getUTCSeconds() / 60 +
         equationTime +
         4 * longitude;
 
@@ -303,36 +377,6 @@
         " (" + shadowAzimuth.toFixed(1) + "°)";
 
       map.setBearing(shadowAzimuth);
-    }
-
-    function readAppInventorMessage() {
-      if (
-        !window.AppInventor ||
-        typeof window.AppInventor.getWebViewString !== "function"
-      ) {
-        return;
-      }
-
-      const message = window.AppInventor.getWebViewString();
-
-      if (
-        !message ||
-        !message.startsWith("SHADOW|") ||
-        message === lastMessage
-      ) {
-        return;
-      }
-
-      lastMessage = message;
-
-      const fields = message.split("|");
-
-      try {
-        displayEstimate(fields[1], fields[2]);
-      } catch (error) {
-        document.getElementById("status").textContent =
-          "Could not read selection: " + error.message;
-      }
     }
   </script>
 </body>
