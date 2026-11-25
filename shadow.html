@@ -1,383 +1,361 @@
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ShadeMap Iloilo - Shadow Estimate</title>
+const latitude = 10.73050;
+const longitude = 122.53665;
 
-  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+let lastMessage = "";
 
-  <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #eef3f0;
-      color: #17352c;
+// ------------------------------------
+// MAP INITIALIZATION
+// ------------------------------------
+
+const map = new maplibregl.Map({
+  container: "map",
+  style: "https://tiles.openfreemap.org/styles/bright",
+  center: [longitude, latitude],
+  zoom: 16,
+  pitch: 55,
+  bearing: -15
+});
+
+map.addControl(new maplibregl.NavigationControl());
+
+map.on("load", function () {
+  const layers = map.getStyle().layers;
+
+  const labelLayer = layers.find(
+    layer => layer.type === "symbol"
+  );
+
+  map.addLayer({
+    id: "3d-buildings",
+    source: "openmaptiles",
+    "source-layer": "building",
+    type: "fill-extrusion",
+    minzoom: 14,
+    paint: {
+      "fill-extrusion-color": "#9aa9a0",
+      "fill-extrusion-height": [
+        "coalesce",
+        ["get", "render_height"],
+        8
+      ],
+      "fill-extrusion-base": [
+        "coalesce",
+        ["get", "render_min_height"],
+        0
+      ],
+      "fill-extrusion-opacity": 0.75
     }
-
-    header {
-      padding: 14px;
-      background: #174b3b;
-      color: white;
-    }
-
-    h2 { margin: 0 0 5px; }
-    #status { font-size: 13px; }
-
-    #map {
-      width: 100%;
-      height: 65vh;
-      min-height: 350px;
-    }
-
-    #info {
-      padding: 14px;
-      line-height: 1.5;
-      background: white;
-    }
-
-    .notice {
-      font-size: 12px;
-      color: #52645c;
-    }
-
-    .sun {
-      font-size: 18px;
-      font-weight: bold;
-      color: #b56a00;
-    }
-
-    #debug {
-      margin-top: 12px;
-      padding: 10px;
-      background: #e8f0ec;
-      border: 1px solid #9aafa3;
-      border-radius: 6px;
-      font-size: 12px;
-      overflow-wrap: anywhere;
-    }
-  </style>
-</head>
-
-<body>
-  <header>
-    <h2>ShadeMap Iloilo</h2>
-    <div>Estimate / Predict Mode</div>
-    <div id="status">Waiting for date and time...</div>
-  </header>
-
-  <div id="map"></div>
-
-  <section id="info">
-    <div class="sun" id="sunDirection">
-      Sun position: Not calculated
-    </div>
-
-    <div id="shadowDirection">
-      Expected shadow direction: Not calculated
-    </div>
-
-    <div id="debug">
-      Connection test: Starting...
-    </div>
-
-    <p class="notice">
-      This is an approximate solar-position demonstration.
-      It does not measure actual ground temperature or verify
-      building heights, tree canopies, or exact shadow boundaries.
-    </p>
-  </section>
-
-  <script>
-    const latitude = 10.73050;
-    const longitude = 122.53665;
-
-    let lastMessage = "";
-    let map;
-
-    function debugMessage(message) {
-      document.getElementById("debug").textContent =
-        "Connection test: " + message;
-    }
-
-    // Start checking the App Inventor connection immediately.
-    function readAppInventorMessage() {
-      if (!window.AppInventor) {
-        debugMessage("window.AppInventor is not available.");
-        return;
-      }
-
-      if (
-        typeof window.AppInventor.getWebViewString !== "function"
-      ) {
-        debugMessage("getWebViewString() is not available.");
-        return;
-      }
-
-      let message;
-
-      try {
-        message = window.AppInventor.getWebViewString();
-      } catch (error) {
-        debugMessage("Reading error: " + error.message);
-        return;
-      }
-
-      debugMessage(
-        "Bridge available. Value received: " +
-        (message || "(empty)")
-      );
-
-      if (
-        !message ||
-        !message.startsWith("SHADOW|") ||
-        message === lastMessage
-      ) {
-        return;
-      }
-
-      lastMessage = message;
-
-      const fields = message.split("|");
-
-      if (fields.length < 3) {
-        document.getElementById("status").textContent =
-          "Invalid message format.";
-        return;
-      }
-
-      try {
-        displayEstimate(fields[1], fields[2]);
-      } catch (error) {
-        document.getElementById("status").textContent =
-          "Could not read selection: " + error.message;
-      }
-    }
-
-    // Check every second, independently of map loading.
-    setInterval(readAppInventorMessage, 1000);
-
-    // Also check immediately.
-    readAppInventorMessage();
-
-    map = new maplibregl.Map({
-      container: "map",
-      style: "https://tiles.openfreemap.org/styles/bright",
-      center: [longitude, latitude],
-      zoom: 16,
-      pitch: 55,
-      bearing: -15
-    });
-
-    map.addControl(new maplibregl.NavigationControl());
-
-    map.on("load", function () {
-      const layers = map.getStyle().layers;
-      const labelLayer = layers.find(
-        layer => layer.type === "symbol"
-      );
-
-      map.addLayer({
-        id: "3d-buildings",
-        source: "openmaptiles",
-        "source-layer": "building",
-        type: "fill-extrusion",
-        minzoom: 14,
-        paint: {
-          "fill-extrusion-color": "#9aa9a0",
-          "fill-extrusion-height": [
-            "coalesce",
-            ["get", "render_height"],
-            8
-          ],
-          "fill-extrusion-base": [
-            "coalesce",
-            ["get", "render_min_height"],
-            0
-          ],
-          "fill-extrusion-opacity": 0.75
-        }
-      }, labelLayer ? labelLayer.id : undefined);
-
-      new maplibregl.Marker({ color: "#16834a" })
-        .setLngLat([122.5366716, 10.7307004])
-        .setPopup(
-          new maplibregl.Popup().setText(
-            "Westwoods Clubhouse"
-          )
-        )
-        .addTo(map);
-
-      new maplibregl.Marker({ color: "#e0a52d" })
-        .setLngLat([122.5368513, 10.7303288])
-        .setPopup(
-          new maplibregl.Popup().setText(
-            "Westwoods Park / Playground"
-          )
-        )
-        .addTo(map);
-
-      new maplibregl.Marker({ color: "#3976bd" })
-        .setLngLat([122.5364520, 10.7303917])
-        .setPopup(
-          new maplibregl.Popup().setText(
-            "Westwoods Tennis Court"
-          )
-        )
-        .addTo(map);
-
-      readAppInventorMessage();
-    });
-
-    function directionName(degrees) {
-      const names = [
-        "North",
-        "Northeast",
-        "East",
-        "Southeast",
-        "South",
-        "Southwest",
-        "West",
-        "Northwest"
-      ];
-
-      return names[Math.round(degrees / 45) % 8];
-    }
-
-    function calculateSun(date, time) {
-      const parts = date.split("/");
-      const timeParts = time.split(":");
-
-      if (parts.length !== 3 || timeParts.length !== 2) {
-        throw new Error("Invalid date or time format.");
-      }
-
-      const month = Number(parts[0]);
-      const day = Number(parts[1]);
-      const year = Number(parts[2]);
-
-      const hour = Number(timeParts[0]);
-      const minute = Number(timeParts[1]);
-
-      if (
-        !month || !day || !year ||
-        hour < 0 || hour > 23 ||
-        minute < 0 || minute > 59
-      ) {
-        throw new Error("Invalid date or time.");
-      }
-
-      const localDate = new Date(
-        year, month - 1, day, hour, minute
-      );
-
-      if (
-        localDate.getFullYear() !== year ||
-        localDate.getMonth() !== month - 1 ||
-        localDate.getDate() !== day
-      ) {
-        throw new Error("Please select a valid date.");
-      }
-
-      // Philippine Standard Time: UTC+8.
-      const utc = new Date(
-        localDate.getTime() - 8 * 60 * 60 * 1000
-      );
-
-      const dayOfYear = Math.floor(
-        (
-          Date.UTC(year, month - 1, day) -
-          Date.UTC(year, 0, 0)
-        ) / 86400000
-      );
-
-      const decimalHour =
-        utc.getUTCHours() +
-        utc.getUTCMinutes() / 60;
-
-      const gamma = 2 * Math.PI / 365 *
-        (dayOfYear - 1 + (decimalHour - 12) / 24);
-
-      const equationTime =
-        229.18 * (
-          0.000075 +
-          0.001868 * Math.cos(gamma) -
-          0.032077 * Math.sin(gamma) -
-          0.014615 * Math.cos(2 * gamma) -
-          0.040849 * Math.sin(2 * gamma)
-        );
-
-      const declination =
-        0.006918 -
-        0.399912 * Math.cos(gamma) +
-        0.070257 * Math.sin(gamma) -
-        0.006758 * Math.cos(2 * gamma) +
-        0.000907 * Math.sin(2 * gamma) -
-        0.002697 * Math.cos(3 * gamma) +
-        0.00148 * Math.sin(3 * gamma);
-
-      const trueSolarMinutes =
-        utc.getUTCHours() * 60 +
-        utc.getUTCMinutes() +
-        equationTime +
-        4 * longitude;
-
-      const hourAngle =
-        (trueSolarMinutes / 4 - 180) * Math.PI / 180;
-
-      const latRad = latitude * Math.PI / 180;
-
-      const sinElevation =
-        Math.sin(latRad) * Math.sin(declination) +
-        Math.cos(latRad) * Math.cos(declination) *
-        Math.cos(hourAngle);
-
-      const elevation = Math.asin(sinElevation);
-
-      const azimuth = Math.atan2(
-        Math.sin(hourAngle),
-        Math.cos(hourAngle) * Math.sin(latRad) -
-        Math.tan(declination) * Math.cos(latRad)
-      ) * 180 / Math.PI + 180;
-
-      return {
-        elevation: elevation * 180 / Math.PI,
-        azimuth: (azimuth + 360) % 360
-      };
-    }
-
-    function displayEstimate(date, time) {
-      const sun = calculateSun(date, time);
-
-      document.getElementById("status").textContent =
-        "Selected: " + date + " at " + time;
-
-      if (sun.elevation <= 0) {
-        document.getElementById("sunDirection").textContent =
-          "Sun position: Below the horizon";
-
-        document.getElementById("shadowDirection").textContent =
-          "A daylight shadow estimate is unavailable at this time.";
-
-        return;
-      }
-
-      const shadowAzimuth = (sun.azimuth + 180) % 360;
-
-      document.getElementById("sunDirection").textContent =
-        "Sun direction: " +
-        directionName(sun.azimuth) +
-        " (" + sun.azimuth.toFixed(1) + "°)";
-
-      document.getElementById("shadowDirection").textContent =
-        "Expected shadow direction: " +
-        directionName(shadowAzimuth) +
-        " (" + shadowAzimuth.toFixed(1) + "°)";
-
-      map.setBearing(shadowAzimuth);
-    }
-  </script>
-</body>
-</html>
+  }, labelLayer ? labelLayer.id : undefined);
+
+  // Clubhouse
+  new maplibregl.Marker({ color: "#16834a" })
+    .setLngLat([122.5366716, 10.7307004])
+    .setPopup(
+      new maplibregl.Popup().setText(
+        "Westwoods Clubhouse"
+      )
+    )
+    .addTo(map);
+
+  // Park / Playground
+  new maplibregl.Marker({ color: "#e0a52d" })
+    .setLngLat([122.5368513, 10.7303288])
+    .setPopup(
+      new maplibregl.Popup().setText(
+        "Westwoods Park / Playground"
+      )
+    )
+    .addTo(map);
+
+  // Tennis Court
+  new maplibregl.Marker({ color: "#3976bd" })
+    .setLngLat([122.5364520, 10.7303917])
+    .setPopup(
+      new maplibregl.Popup().setText(
+        "Westwoods Tennis Court"
+      )
+    )
+    .addTo(map);
+
+  readAppInventorMessage();
+});
+
+// ------------------------------------
+// CONNECTION DIAGNOSTIC
+// ------------------------------------
+
+function debugMessage(message) {
+  document.getElementById("debug").textContent =
+    "Connection test: " + message;
+}
+
+// ------------------------------------
+// COMPASS DIRECTION
+// ------------------------------------
+
+function directionName(degrees) {
+  const names = [
+    "North",
+    "Northeast",
+    "East",
+    "Southeast",
+    "South",
+    "Southwest",
+    "West",
+    "Northwest"
+  ];
+
+  const index = Math.round(
+    ((degrees % 360) + 360) % 360 / 45
+  ) % 8;
+
+  return names[index];
+}
+
+// ------------------------------------
+// SOLAR POSITION CALCULATION
+// ------------------------------------
+
+function calculateSun(date, time) {
+  const dateParts = date.split("/");
+  const timeParts = time.split(":");
+
+  if (
+    dateParts.length !== 3 ||
+    timeParts.length !== 2
+  ) {
+    throw new Error("Invalid date or time format.");
+  }
+
+  const month = Number(dateParts[0]);
+  const day = Number(dateParts[1]);
+  const year = Number(dateParts[2]);
+
+  const hour = Number(timeParts[0]);
+  const minute = Number(timeParts[1]);
+
+  if (
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    !Number.isInteger(year) ||
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute) ||
+    month < 1 || month > 12 ||
+    day < 1 || day > 31 ||
+    hour < 0 || hour > 23 ||
+    minute < 0 || minute > 59
+  ) {
+    throw new Error("Invalid date or time.");
+  }
+
+  const selectedDate = new Date(
+    Date.UTC(year, month - 1, day)
+  );
+
+  if (
+    selectedDate.getUTCFullYear() !== year ||
+    selectedDate.getUTCMonth() !== month - 1 ||
+    selectedDate.getUTCDate() !== day
+  ) {
+    throw new Error("Please select a valid date.");
+  }
+
+  // Day number in the year
+  const dayOfYear = Math.floor(
+    (
+      Date.UTC(year, month - 1, day) -
+      Date.UTC(year, 0, 0)
+    ) / 86400000
+  );
+
+  // Local Philippine Standard Time
+  const decimalHour = hour + minute / 60;
+
+  // Fractional year
+  const gamma =
+    (2 * Math.PI / 365) *
+    (
+      dayOfYear - 1 +
+      (decimalHour - 12) / 24
+    );
+
+  // Equation of time (minutes)
+  const equationTime =
+    229.18 * (
+      0.000075 +
+      0.001868 * Math.cos(gamma) -
+      0.032077 * Math.sin(gamma) -
+      0.014615 * Math.cos(2 * gamma) -
+      0.040849 * Math.sin(2 * gamma)
+    );
+
+  // Solar declination (radians)
+  const declination =
+    0.006918 -
+    0.399912 * Math.cos(gamma) +
+    0.070257 * Math.sin(gamma) -
+    0.006758 * Math.cos(2 * gamma) +
+    0.000907 * Math.sin(2 * gamma) -
+    0.002697 * Math.cos(3 * gamma) +
+    0.00148 * Math.sin(3 * gamma);
+
+  // Iloilo uses UTC+8.
+  // Correct local clock time to apparent solar time.
+  const timeZoneOffset = 8;
+
+  const timeOffset =
+    equationTime +
+    4 * longitude -
+    60 * timeZoneOffset;
+
+  const trueSolarMinutes =
+    hour * 60 +
+    minute +
+    timeOffset;
+
+  // Solar hour angle
+  const hourAngle =
+    (trueSolarMinutes / 4 - 180) *
+    Math.PI / 180;
+
+  const latRad =
+    latitude * Math.PI / 180;
+
+  // Solar elevation
+  const sinElevation =
+    Math.sin(latRad) * Math.sin(declination) +
+    Math.cos(latRad) * Math.cos(declination) *
+    Math.cos(hourAngle);
+
+  const elevation = Math.asin(
+    Math.max(-1, Math.min(1, sinElevation))
+  );
+
+  // Solar azimuth, measured clockwise from North
+  const azimuth =
+    Math.atan2(
+      Math.sin(hourAngle),
+      Math.cos(hourAngle) * Math.sin(latRad) -
+      Math.tan(declination) * Math.cos(latRad)
+    ) * 180 / Math.PI + 180;
+
+  return {
+    elevation: elevation * 180 / Math.PI,
+    azimuth: (azimuth + 360) % 360
+  };
+}
+
+// ------------------------------------
+// DISPLAY SOLAR AND SHADOW ESTIMATE
+// ------------------------------------
+
+function displayEstimate(date, time) {
+  const sun = calculateSun(date, time);
+
+  const sunLabel =
+    document.getElementById("sunDirection");
+
+  const shadowLabel =
+    document.getElementById("shadowDirection");
+
+  const statusLabel =
+    document.getElementById("status");
+
+  statusLabel.textContent =
+    "Selected: " + date + " at " + time;
+
+  if (sun.elevation <= 0) {
+    sunLabel.textContent =
+      "Sun position: Below the horizon";
+
+    shadowLabel.textContent =
+      "A daylight shadow estimate is unavailable at this time.";
+
+    return;
+  }
+
+  // Shadows point approximately opposite the Sun.
+  const shadowAzimuth =
+    (sun.azimuth + 180) % 360;
+
+  sunLabel.textContent =
+    "Sun direction: " +
+    directionName(sun.azimuth) +
+    " (" + sun.azimuth.toFixed(1) + "°)" +
+    " | Elevation: " +
+    sun.elevation.toFixed(1) + "°";
+
+  shadowLabel.textContent =
+    "Expected shadow direction: " +
+    directionName(shadowAzimuth) +
+    " (" + shadowAzimuth.toFixed(1) + "°)";
+
+  map.setBearing(shadowAzimuth);
+}
+
+// ------------------------------------
+// RECEIVE APP INVENTOR MESSAGE
+// ------------------------------------
+
+function readAppInventorMessage() {
+  if (!window.AppInventor) {
+    debugMessage("window.AppInventor is not available.");
+    return;
+  }
+
+  if (
+    typeof window.AppInventor.getWebViewString !==
+    "function"
+  ) {
+    debugMessage("getWebViewString() is not available.");
+    return;
+  }
+
+  let message;
+
+  try {
+    message = window.AppInventor.getWebViewString();
+  } catch (error) {
+    debugMessage(
+      "Reading error: " + error.message
+    );
+    return;
+  }
+
+  debugMessage(
+    "Bridge available. Value received: " +
+    (message || "(empty)")
+  );
+
+  if (
+    !message ||
+    !message.startsWith("SHADOW|") ||
+    message === lastMessage
+  ) {
+    return;
+  }
+
+  const fields = message.split("|");
+
+  if (fields.length < 3) {
+    document.getElementById("status").textContent =
+      "Invalid message format.";
+    return;
+  }
+
+  lastMessage = message;
+
+  try {
+    displayEstimate(fields[1], fields[2]);
+  } catch (error) {
+    document.getElementById("status").textContent =
+      "Calculation error: " + error.message;
+  }
+}
+
+// Check for new messages every second.
+setInterval(readAppInventorMessage, 1000);
+
+// Check immediately.
+readAppInventorMessage();
