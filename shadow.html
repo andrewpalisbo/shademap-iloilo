@@ -4,41 +4,38 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShadeMap Iloilo - Solar Shadow Map</title>
 
-  <title>ShadeMap Iloilo - Solar Estimator</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css"
+  >
 
   <style>
     * {
       box-sizing: border-box;
     }
 
-    html {
-      width: 100%;
-      min-height: 100%;
-      overflow-x: hidden;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    body {
+    html, body {
       margin: 0;
-      padding: 20px;
-      min-height: 100%;
+      padding: 0;
       width: 100%;
-      overflow-x: hidden;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
+      min-height: 100%;
       font-family: Arial, sans-serif;
       background: #eef3f0;
       color: #17352c;
     }
 
+    body {
+      padding: 14px;
+    }
+
     header {
       background: #174b3b;
       color: white;
-      padding: 20px;
+      padding: 18px;
       border-radius: 12px;
-      margin-bottom: 18px;
+      margin-bottom: 14px;
     }
 
     h2 {
@@ -48,24 +45,26 @@
     #status {
       font-size: 13px;
       margin-top: 10px;
+      line-height: 1.5;
     }
 
     .card {
       background: white;
-      padding: 18px;
-      margin-bottom: 15px;
+      padding: 16px;
+      margin-bottom: 14px;
       border-radius: 12px;
       box-shadow: 0 2px 7px rgba(0,0,0,0.08);
     }
 
     .card-title {
-      font-size: 14px;
+      font-size: 13px;
       color: #52645c;
       margin-bottom: 8px;
+      font-weight: bold;
     }
 
     .result {
-      font-size: 20px;
+      font-size: 19px;
       font-weight: bold;
       color: #174b3b;
       line-height: 1.5;
@@ -75,6 +74,21 @@
       font-size: 17px;
       font-weight: bold;
       color: #b56a00;
+      line-height: 1.5;
+    }
+
+    #map {
+      width: 100%;
+      height: 520px;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #dce7df;
+    }
+
+    #mapStatus {
+      font-size: 12px;
+      color: #52645c;
+      margin-top: 9px;
       line-height: 1.5;
     }
 
@@ -89,12 +103,31 @@
     .notice {
       font-size: 12px;
       color: #52645c;
-      line-height: 1.5;
+      line-height: 1.6;
     }
 
-    .location {
-      font-size: 13px;
+    .legend {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      margin-top: 10px;
       color: #52645c;
+    }
+
+    .shadow-symbol {
+      width: 18px;
+      height: 18px;
+      background: rgba(0,0,0,0.35);
+      border-radius: 3px;
+    }
+
+    .building-symbol {
+      width: 18px;
+      height: 18px;
+      background: #aab5aa;
+      border: 1px solid #758579;
+      border-radius: 3px;
     }
   </style>
 </head>
@@ -108,25 +141,40 @@
   </header>
 
   <section class="card">
+    <div class="card-title">SOLAR SHADOW MAP</div>
+    <div id="map"></div>
+
+    <div class="legend">
+      <span class="building-symbol"></span>
+      3D Buildings
+    </div>
+
+    <div class="legend">
+      <span class="shadow-symbol"></span>
+      Simulated Building Shadows
+    </div>
+
+    <div id="mapStatus">
+      Loading Iloilo City map...
+    </div>
+  </section>
+
+  <section class="card">
     <div class="card-title">LOCATION</div>
-    <div class="result">Westwoods Subdivision</div>
-    <div class="location">
-      Iloilo City, Philippines
+    <div class="result">Iloilo City</div>
+    <div style="font-size:13px;color:#52645c;">
+      Philippines
     </div>
   </section>
 
   <section class="card">
     <div class="card-title">SUN DIRECTION</div>
-    <div class="result" id="sunDirection">
-      Not calculated
-    </div>
+    <div class="result" id="sunDirection">Not calculated</div>
   </section>
 
   <section class="card">
     <div class="card-title">SUN ELEVATION</div>
-    <div class="result" id="sunElevation">
-      Not calculated
-    </div>
+    <div class="result" id="sunElevation">Not calculated</div>
   </section>
 
   <section class="card">
@@ -138,27 +186,34 @@
 
   <section class="card">
     <div class="card-title">CONNECTION DIAGNOSTIC</div>
-    <div id="debug">
-      Checking App Inventor connection...
-    </div>
+    <div id="debug">Checking App Inventor connection...</div>
   </section>
 
   <section class="card">
     <div class="notice">
       <strong>Important Notice</strong><br><br>
+
       This application provides an approximate solar-position
       calculation based on the selected date, time, and location.
 
-      Shadow direction is estimated as opposite the Sun's direction.
-      This does not display actual building-by-building or
-      tree-by-tree shadows.
+      Building shadows are simulated using available building
+      footprints and estimated building heights where necessary.
+
+      The displayed shadows are not verified real-world shadows.
+      The simulation does not account for every tree, structure,
+      terrain feature, or obstruction.
 
       It does not measure ground temperature or predict actual
       outdoor temperatures.
     </div>
   </section>
 
-  <script>
+  <script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
+
+  <script type="module">
+
+    import { WallShadowLayer } from "./ao-shadow.mjs";
+
     // =====================================
     // LOCATION AND TIME SETTINGS
     // =====================================
@@ -168,6 +223,9 @@
     const timeZoneOffset = 8;
 
     let lastMessage = "";
+    let map = null;
+    let shadowLayer = null;
+    let mapReady = false;
 
     // =====================================
     // CONNECTION DIAGNOSTIC
@@ -183,6 +241,7 @@
     // =====================================
 
     function directionName(degrees) {
+
       const directions = [
         "North",
         "Northeast",
@@ -204,7 +263,150 @@
     }
 
     // =====================================
-    // CALCULATE SOLAR POSITION
+    // MAP INITIALIZATION
+    // =====================================
+
+    function initializeMap() {
+
+      const mapStatus =
+        document.getElementById("mapStatus");
+
+      if (typeof maplibregl === "undefined") {
+        mapStatus.textContent =
+          "MapLibre failed to load.";
+        return;
+      }
+
+      map = new maplibregl.Map({
+        container: "map",
+        style: "https://tiles.openfreemap.org/styles/bright",
+
+        // Iloilo City overview
+        center: [122.5621, 10.7202],
+        zoom: 12.3,
+        pitch: 55,
+        bearing: -15,
+        maxPitch: 85
+      });
+
+      map.addControl(
+        new maplibregl.NavigationControl({
+          visualizePitch: true
+        }),
+        "top-right"
+      );
+
+      map.addControl(
+        new maplibregl.ScaleControl(),
+        "bottom-left"
+      );
+
+      map.on("error", function(event) {
+        console.error("Map error:", event.error);
+        mapStatus.textContent =
+          "Map resource error. Check your internet connection.";
+      });
+
+      map.on("load", function() {
+
+        try {
+
+          // BUILDING DATA SOURCE
+          map.addSource("openfreemap-buildings", {
+            type: "vector",
+            url: "https://tiles.openfreemap.org/planet"
+          });
+
+          // FIND LABEL LAYER
+          const layers = map.getStyle().layers;
+
+          let labelLayerId;
+
+          for (let i = 0; i < layers.length; i++) {
+            if (
+              layers[i].type === "symbol" &&
+              layers[i].layout &&
+              layers[i].layout["text-field"]
+            ) {
+              labelLayerId = layers[i].id;
+              break;
+            }
+          }
+
+          // 3D BUILDINGS
+          map.addLayer({
+            id: "3d-buildings",
+            source: "openfreemap-buildings",
+            "source-layer": "building",
+            type: "fill-extrusion",
+            minzoom: 14,
+
+            paint: {
+              "fill-extrusion-color": "#aab5aa",
+
+              "fill-extrusion-height": [
+                "coalesce",
+                ["get", "render_height"],
+                12
+              ],
+
+              "fill-extrusion-base": [
+                "coalesce",
+                ["get", "render_min_height"],
+                0
+              ],
+
+              "fill-extrusion-opacity": 0.85
+            }
+
+          }, labelLayerId);
+
+          // SHADOW RENDERER
+          shadowLayer = new WallShadowLayer({
+            id: "iloilo-wall-shadows",
+            buildingsLayerId: "3d-buildings",
+            sourceId: "openfreemap-buildings",
+
+            minZoom: 15,
+            maxZoom: 20,
+
+            heightScale: 0.38,
+            shadowOffset: [-0.5, 0.5],
+            shadowAlpha: 0.40,
+            shadowBlur: 2.0,
+
+            groundFx: true,
+            wallShade: true,
+
+            sdfResolution: 512
+          });
+
+          // Add custom shadow layer before the building layer.
+          map.addLayer(shadowLayer, "3d-buildings");
+
+          mapReady = true;
+
+          mapStatus.textContent =
+            "Iloilo City map loaded. Zoom in to level 15 or closer to view simulated shadows.";
+
+          // Apply the latest calculation if already received.
+          if (lastSolarResult) {
+            updateShadowMap(lastSolarResult);
+          }
+
+        } catch(error) {
+
+          console.error("Map setup error:", error);
+
+          mapStatus.textContent =
+            "Map loaded, but the 3D shadow setup failed: " +
+            error.message;
+        }
+      });
+    }
+
+    // =====================================
+    // SOLAR CALCULATION
     // =====================================
 
     function calculateSun(date, time) {
@@ -252,7 +454,6 @@
         throw new Error("Please select a valid date.");
       }
 
-      // Day number in the year.
       const dayOfYear = Math.floor(
         (
           Date.UTC(year, month - 1, day) -
@@ -260,10 +461,8 @@
         ) / 86400000
       );
 
-      // Local Philippine time.
       const decimalHour = hour + minute / 60;
 
-      // Fractional year.
       const gamma =
         (2 * Math.PI / 365) *
         (
@@ -271,7 +470,6 @@
           (decimalHour - 12) / 24
         );
 
-      // Equation of time.
       const equationTime =
         229.18 * (
           0.000075 +
@@ -281,7 +479,6 @@
           0.040849 * Math.sin(2 * gamma)
         );
 
-      // Solar declination.
       const declination =
         0.006918 -
         0.399912 * Math.cos(gamma) +
@@ -291,7 +488,6 @@
         0.002697 * Math.cos(3 * gamma) +
         0.00148 * Math.sin(3 * gamma);
 
-      // Convert local clock time to solar time.
       const timeOffset =
         equationTime +
         4 * longitude -
@@ -302,7 +498,6 @@
         minute +
         timeOffset;
 
-      // Solar hour angle.
       const hourAngle =
         (trueSolarMinutes / 4 - 180) *
         Math.PI / 180;
@@ -310,7 +505,6 @@
       const latitudeRadians =
         latitude * Math.PI / 180;
 
-      // Solar elevation.
       const sinElevation =
         Math.sin(latitudeRadians) *
         Math.sin(declination) +
@@ -325,7 +519,6 @@
       const elevation =
         elevationRadians * 180 / Math.PI;
 
-      // Solar azimuth, clockwise from North.
       const azimuthRadians = Math.atan2(
         Math.sin(hourAngle),
         Math.cos(hourAngle) *
@@ -341,6 +534,65 @@
         elevation: elevation,
         azimuth: azimuth
       };
+    }
+
+    // =====================================
+    // UPDATE SHADOW MAP
+    // =====================================
+
+    let lastSolarResult = null;
+
+    function updateShadowMap(sun) {
+
+      if (!mapReady || !shadowLayer) {
+        return;
+      }
+
+      if (sun.elevation <= 0) {
+
+        shadowLayer.enabled = false;
+
+        document.getElementById("mapStatus").textContent =
+          "The Sun is below the horizon. No daylight shadow simulation is available.";
+
+        map.triggerRepaint();
+        return;
+      }
+
+      // Direction opposite the Sun.
+      const shadowAzimuth =
+        (sun.azimuth + 180) % 360;
+
+      const radians =
+        shadowAzimuth * Math.PI / 180;
+
+      // Shadow direction as [x, y].
+      shadowLayer.shadowOffset = [
+        -Math.sin(radians),
+        -Math.cos(radians)
+      ];
+
+      // Approximate length adjustment using Sun elevation.
+      const elevationRadians =
+        sun.elevation * Math.PI / 180;
+
+      const lengthFactor =
+        0.38 / Math.tan(elevationRadians);
+
+      shadowLayer.heightScale =
+        Math.max(0.12, Math.min(2.5, lengthFactor));
+
+      shadowLayer.enabled = true;
+
+      mapStatusText();
+
+      map.triggerRepaint();
+    }
+
+    function mapStatusText() {
+
+      document.getElementById("mapStatus").textContent =
+        "Simulated shadows updated. Zoom in to level 15 or closer to view building details.";
     }
 
     // =====================================
@@ -374,10 +626,12 @@
         shadowDirection.textContent =
           "No daylight shadow estimate available";
 
+        lastSolarResult = sun;
+        updateShadowMap(sun);
+
         return;
       }
 
-      // Shadow points approximately opposite the Sun.
       const shadowAzimuth =
         (sun.azimuth + 180) % 360;
 
@@ -391,6 +645,9 @@
       shadowDirection.textContent =
         directionName(shadowAzimuth) +
         " (" + shadowAzimuth.toFixed(1) + "°)";
+
+      lastSolarResult = sun;
+      updateShadowMap(sun);
     }
 
     // =====================================
@@ -418,7 +675,7 @@
         message =
           window.AppInventor.getWebViewString();
 
-      } catch (error) {
+      } catch(error) {
         debugMessage("Reading error: " + error.message);
         return;
       }
@@ -445,18 +702,23 @@
       }
 
       try {
+
         displayEstimate(fields[1], fields[2]);
+
         lastMessage = message;
 
-      } catch (error) {
+      } catch(error) {
+
         document.getElementById("status").textContent =
           "Calculation error: " + error.message;
       }
     }
 
     // =====================================
-    // AUTOMATIC MESSAGE CHECK
+    // START MAP AND MESSAGE CHECK
     // =====================================
+
+    initializeMap();
 
     readAppInventorMessage();
 
